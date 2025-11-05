@@ -90,8 +90,18 @@ check_existing_branches() {
     # Find all branches matching the pattern using git ls-remote (more reliable)
     local remote_branches=$(git ls-remote --heads origin 2>/dev/null | grep -E "refs/heads/[0-9]+-${short_name}$" | sed 's/.*\/\([0-9]*\)-.*/\1/' | sort -n)
     
-    # Also check local branches
-    local local_branches=$(git branch 2>/dev/null | grep -E "^[* ]*[0-9]+-${short_name}$" | sed 's/^[* ]*//' | sed 's/-.*//' | sort -n)
+    # Also check local branches - with validation
+    local local_branches=""
+    local all_local=$(git branch 2>/dev/null | grep -E "^[* ]*[0-9]+-${short_name}$")
+    if [ -n "$all_local" ]; then
+        while IFS= read -r branch; do
+            # Validate branch name contains only safe characters
+            if [[ "$branch" =~ ^[*[:space:]]*[0-9a-zA-Z/_.-]+$ ]]; then
+                local_branches="$local_branches $(echo "$branch" | sed 's/^[* ]*//' | sed 's/-.*//')"
+            fi
+        done <<< "$all_local"
+        local_branches=$(echo "$local_branches" | tr ' ' '\n' | sort -n)
+    fi
     
     # Check specs directory as well
     local spec_dirs=""
@@ -156,11 +166,14 @@ if [ "$HAS_GIT" = true ]; then
             # Clean branch name: remove leading markers and remote prefixes
             clean_branch=$(echo "$branch" | sed 's/^[* ]*//; s|^remotes/[^/]*/||')
 
-            # Extract feature number if branch matches pattern ###-*
-            if echo "$clean_branch" | grep -q '^[0-9]\{3\}-'; then
-                number=$(echo "$clean_branch" | grep -o '^[0-9]\{3\}' || echo "0")
-                number=$((10#$number))
-                if [ "$number" -gt "$HIGHEST_FROM_BRANCHES" ]; then HIGHEST_FROM_BRANCHES=$number; fi
+            # Validate branch name contains only safe characters for security
+            if [[ "$clean_branch" =~ ^[0-9a-zA-Z/_.-]+$ ]]; then
+                # Extract feature number if branch matches pattern ###-*
+                if echo "$clean_branch" | grep -q '^[0-9]\{3\}-'; then
+                    number=$(echo "$clean_branch" | grep -o '^[0-9]\{3\}' || echo "0")
+                    number=$((10#$number))
+                    if [ "$number" -gt "$HIGHEST_FROM_BRANCHES" ]; then HIGHEST_FROM_BRANCHES=$number; fi
+                fi
             fi
         done <<< "$branches"
     fi

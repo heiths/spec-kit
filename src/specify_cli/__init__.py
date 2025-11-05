@@ -1293,9 +1293,15 @@ def summarize():
     if not script_path:
         tracker.error("find-script", f"Could not find {script_name} (.ps1 or .sh)")
         console.print(tracker.render())
-        console.print(f"\n[red]Error: Analysis script not found. Tried:[/red]")
+        console.print(f"\n[red]Error: Analysis script not found.[/red]")
+        console.print("\n[yellow]Searched locations:[/yellow]")
         for path in possible_script_paths:
             console.print(f"  - {path}")
+        console.print("\n[yellow]Possible solutions:[/yellow]")
+        console.print("  1. Run 'specify init --here --ai <agent>' to initialize the project")
+        console.print("  2. Ensure .specify directory exists with scripts/ subdirectory")
+        console.print("  3. Check that the installation is not corrupted")
+        console.print("  4. Try running from the project root directory")
         raise typer.Exit(1)
 
     tracker.add("run-script", f"Run analysis script ({script_path.name})")
@@ -1320,16 +1326,32 @@ def summarize():
         )
 
         # Parse JSON output
-        data = json.loads(result.stdout)
-        tracker.complete("run-script", f"Found {len(data.get('LANGUAGES', []))} language(s)")
+        try:
+            data = json.loads(result.stdout)
+            # Validate expected keys
+            required_keys = ['REPO_ROOT', 'PROJECT_TYPE', 'TECH_FILES', 'DIRECTORIES', 'LANGUAGES']
+            missing_keys = [key for key in required_keys if key not in data]
+            if missing_keys:
+                raise ValueError(f"Script output missing required keys: {', '.join(missing_keys)}")
+
+            tracker.complete("run-script", f"Found {len(data.get('LANGUAGES', []))} language(s)")
+        except json.JSONDecodeError as e:
+            tracker.error("run-script", f"Invalid JSON output from script: {e}")
+            console.print(tracker.render())
+            console.print(f"\n[red]Script output (first 500 chars):[/red]\n{result.stdout[:500]}")
+            console.print("\n[yellow]This may indicate the script encountered an error or produced non-JSON output.[/yellow]")
+            raise typer.Exit(1)
+        except ValueError as e:
+            tracker.error("run-script", str(e))
+            console.print(tracker.render())
+            console.print("\n[yellow]The script ran successfully but output was incomplete.[/yellow]")
+            console.print("[yellow]This may indicate an issue with the project structure or script compatibility.[/yellow]")
+            raise typer.Exit(1)
 
     except subprocess.CalledProcessError as e:
         tracker.error("run-script", f"Script failed: {e.stderr}")
         console.print(tracker.render())
-        raise typer.Exit(1)
-    except json.JSONDecodeError as e:
-        tracker.error("run-script", f"Invalid JSON output: {e}")
-        console.print(tracker.render())
+        console.print("\n[yellow]The analysis script encountered an error. Check that you're in a valid project directory.[/yellow]")
         raise typer.Exit(1)
 
     console.print(tracker.render())

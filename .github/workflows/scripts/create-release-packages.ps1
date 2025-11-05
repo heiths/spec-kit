@@ -255,11 +255,22 @@ function Build-Variant {
         Get-ChildItem -Path "templates" -Recurse -File | Where-Object {
             $_.FullName -notmatch 'templates[/\\]commands[/\\]' -and $_.Name -ne 'vscode-settings.json'
         } | ForEach-Object {
-            $relativePath = $_.FullName.Substring((Resolve-Path "templates").Path.Length + 1)
-            $destFile = Join-Path $templatesDestDir $relativePath
-            $destFileDir = Split-Path $destFile -Parent
-            New-Item -ItemType Directory -Path $destFileDir -Force | Out-Null
-            Copy-Item -Path $_.FullName -Destination $destFile -Force
+            try {
+                $templatesPath = (Resolve-Path "templates").Path
+                $relativePath = $_.FullName.Substring($templatesPath.Length + 1)
+                # Validate path to prevent traversal
+                if ($relativePath -match '\.\.') {
+                    Write-Warning "Skipping suspicious path: $relativePath"
+                    return
+                }
+                $destFile = Join-Path $templatesDestDir $relativePath
+                $destFileDir = Split-Path $destFile -Parent
+                New-Item -ItemType Directory -Path $destFileDir -Force | Out-Null
+                Copy-Item -Path $_.FullName -Destination $destFile -Force
+            } catch {
+                Write-Error "Failed to copy $($_.FullName): $_"
+                throw
+            }
         }
         Write-Host "Copied templates -> .specify/templates"
     }
